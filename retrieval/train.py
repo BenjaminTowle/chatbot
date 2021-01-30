@@ -5,17 +5,17 @@ import random
 import os
 import chatbot_db as db
 import pandas as pd
-from retrieval.retriever import Retriever
+from Retrieval.retriever import Retriever, MODEL_NAME
 
 #######################################
 # MODEL HYPER-PARAMETERS
 #######################################
 
-EMBEDDING_DIM = 512
+EMBEDDING_DIM = 512  # Output embedding size
 EPOCHS = 100
 BATCH_SIZE = 30
 LEARNING_RATE = 1e-4
-NUM_SAMPLES = 30000
+NUM_SAMPLES = 100
 TRAIN_SPLIT = 0.9
 
 
@@ -53,19 +53,19 @@ def generator():
         base_contexts = np.asarray(dataframe["context"].to_list())
         base_responses = np.asarray(dataframe["response"].to_list())
 
-        contexts = np.zeros((NUM_SAMPLES * 2, 512), dtype=np.float)
-        responses = np.zeros((NUM_SAMPLES * 2, 512), dtype=np.float)
+        contexts = np.zeros((NUM_SAMPLES * 2, EMBEDDING_DIM), dtype=np.float)
+        responses = np.zeros((NUM_SAMPLES * 2, EMBEDDING_DIM), dtype=np.float)
         labels = np.zeros((NUM_SAMPLES * 2), dtype=np.float)
-        for i in range(0, NUM_SAMPLES, 2):
-            contexts[i] = base_contexts[i]
-            contexts[i+1] = base_contexts[i]
-            responses[i] = base_responses[i]
-            responses[i+1] = base_responses[random.randint(0, NUM_SAMPLES-1)]
-            labels[i] = 0.0
-            labels[i+1] = 1.0
+        for i in range(NUM_SAMPLES):
+            contexts[2*i] = base_contexts[i]
+            contexts[2*i+1] = base_contexts[i]
+            responses[2*i] = base_responses[i]
+            responses[2*i+1] = base_responses[random.randint(0, NUM_SAMPLES-1)]
+            labels[2*i] = 0.0
+            labels[2*i+1] = 1.0
 
         # Iterate over mini-batches and split into test and train
-        for j in range(int(NUM_SAMPLES*2/BATCH_SIZE)):
+        for j in range(NUM_SAMPLES*2//BATCH_SIZE):
             start_ind = j * BATCH_SIZE
             end_ind = (j+1) * BATCH_SIZE
             end_ind_train = start_ind + int((end_ind-start_ind) * TRAIN_SPLIT)
@@ -79,9 +79,9 @@ def generator():
             yield batch_contexts_train, batch_responses_train, batch_labels_train, batch_contexts_test, batch_responses_test, batch_labels_test
 
 
-def main():
+def train():
     @tf.function
-    def train(c_train, r_train, l_train):
+    def train_step(c_train, r_train, l_train):
         """
         This function is called during the training loop and covers forwards and backwards propagation of the training
         data
@@ -103,11 +103,9 @@ def main():
     dataset = tf.data.Dataset.from_generator(generator,
         (tf.float32, tf.float32, tf.float32, tf.float32, tf.float32, tf.float32))
 
-    # Create the model and load latest checkpoint if exists
+    # Create the model - model will automatically load latest MODEL_NAME checkpoint if it exists
     retriever = Retriever(model_size=EMBEDDING_DIM)
-    if os.path.exists("retriever.h5"):
-        retriever.load_weights("retriever.h5")
-        retriever.initialise()
+
     optimizer = tf.optimizers.Adam(learning_rate=LEARNING_RATE)
 
     print("Commencing training ...")
@@ -117,8 +115,9 @@ def main():
     # Losses should be stored in lists so that average can be taken over the entire epoch
     train_losses = []
     test_losses = []
+    epochs_completed = 0
     for step, (c_train, r_train, l_train, c_test, r_test, l_test) in enumerate(dataset.take(-1)):
-        loss = train(c_train, r_train, l_train)
+        loss = train_step(c_train, r_train, l_train)
         if loss.numpy().size > 0:
             train_losses.append(np.mean(loss.numpy()))
         else:
@@ -130,13 +129,14 @@ def main():
             test_loss = retriever(c_test, r_test, l_test)
             test_losses.append(np.mean(test_loss.numpy()))
             print(f"Steps completed: {step+1}; Train loss: {np.mean(train_losses)}; Test loss: {np.mean(test_losses)}")
-            retriever.save_weights("retriever.h5")
+            retriever.save_weights(MODEL_NAME)
 
         # Reset losses after every epoch
         if (step+1) % steps_per_epoch == 0:
             train_losses = []
             test_losses = []
-
-
-if __name__ == "__main__":
-    main()
+            epochs_completed += 1
+            print(f"Epochs completed: {epochs_completed}")
+            if epochs_completed == EPOCHS:
+                print(f"Training completed after {EPOCHS} epochs")
+                break
