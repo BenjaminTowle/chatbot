@@ -8,38 +8,23 @@ import spacy
 from spellchecker import SpellChecker
 import chatbot_db as db
 import nltk
-
-nltk.download('punkt')
-
-try:
-    nlp = spacy.load("en_core_web_md")
-except IOError:
-    # Exception will be thrown if not downloaded
-    spacy.cli.download("en_core_web_md")
-    nlp = spacy.load("en_core_web_md")
     
 
 ################################
-# Filtering hyper-parameters
+# FILTERING HYPER-PARAMETERS
 ################################
 
 MIN_LENGTH = 5
 MAX_LENGTH = 30
 MIN_SCORE = 2
-SUBREDDIT_MAX_SIZE = 50000000
+SUBREDDIT_MAX_SIZE = 10000000
 SUBREDDIT_MIN_SIZE = 1000000
+MAX_PAIRS = 50000  # Maximum number of pairs that can be stored in the database for a given subreddit
 
 START = 5
 END = 20
 
 total_pairs = 0
-
-# Load blacklist of profane words
-profanity = []
-with open("profanity.txt", "r") as f:
-    lines = f.readlines()
-    for line in lines:
-        profanity.append(line.replace("\n", "").replace("\r", "").lower())
 
 
 def get_subreddits():
@@ -50,6 +35,16 @@ def get_subreddits():
     heuristic filters are applied which can be enabled or disabled as needed.
     :return:
     """
+    # Load tools needed for preprocessing the context-response pairs
+    nltk.download('punkt')
+    try:
+        nlp = spacy.load("en_core_web_md")
+    except IOError:
+        # Exception will be thrown if not downloaded
+        spacy.cli.download("en_core_web_md")
+        nlp = spacy.load("en_core_web_md")
+
+    # Load the webpage containing files
     url = "https://zissou.infosci.cornell.edu/convokit/datasets/subreddit-corpus/corpus-zipped/"
     request = requests.get(url)
     print("loaded main url ...")
@@ -62,7 +57,7 @@ def get_subreddits():
         for i, (row, link) in enumerate(list(zip(table, body.find_all("a")))[1:]):
             print(i)
             if i >= START:
-                # Search through only first 20
+                # Search through only START-END links
                 if i == START+END:
                     break
 
@@ -103,12 +98,12 @@ def get_subreddits():
                             with zipfile.ZipFile(save_path, 'r') as zip_ref:
                                 zip_ref.extractall(fd)
 
-                            e = load_dataset(fd)
+                            e = load_dataset(fd, nlp)
                             if e == -1:
                                 print("dataset: ", name, " not found")
 
 
-def load_dataset(filename):
+def load_dataset(filename, nlp):
     contexts = []
     responses = []
     try:
@@ -140,38 +135,23 @@ def load_dataset(filename):
     tmp_responses = []
     for i in range(len(contexts)):
         if responses[i].meta["score"] >= MIN_SCORE:
-            tmp_contexts.append(contexts[i])
-            tmp_responses.append(responses[i])
-    contexts = tmp_contexts
-    responses = tmp_responses
-
-    # 3) Check for profanity in response
-    tmp_contexts = []
-    tmp_responses = []
-    for i in range(len(contexts)):
-        is_profane = False
-        for word in profanity:
-            if word.lower() in responses[i].text.lower():
-                is_profane = True
-        if not is_profane:
             tmp_contexts.append(contexts[i].text)
             tmp_responses.append(responses[i].text)
     contexts = tmp_contexts
     responses = tmp_responses
 
-    # 4) filter incorrect spelling
+    # 3) filter incorrect spelling
     tmp_contexts = []
     tmp_responses = []
     spell = SpellChecker()
     for i in range(len(contexts)):
-
         if len(spell.unknown(word_tokenize(contexts[i]))) == 0 and len(spell.unknown(word_tokenize(responses[i]))) == 0:
             tmp_contexts.append(contexts[i])
             tmp_responses.append(responses[i])
     contexts = tmp_contexts
     responses = tmp_responses
 
-    # 5) named-entity recognition (remove responses with named-entities and tag contexts with named-entities -
+    # 4) named-entity recognition (remove responses with named-entities and tag contexts with named-entities -
     # these are typically very context specific and not likely to be appropriate for a general retrieval chatbot)
     tmp_contexts = []
     tmp_responses = []
@@ -182,9 +162,8 @@ def load_dataset(filename):
     contexts = tmp_contexts
     responses = tmp_responses
 
-    BATCH_SIZE = 50000
-    contexts = contexts[:BATCH_SIZE]
-    responses = responses[:BATCH_SIZE]
+    contexts = contexts[:MAX_PAIRS]
+    responses = responses[:MAX_PAIRS]
     # Add new data to database
     values = db.preprocess(contexts, responses)
 
