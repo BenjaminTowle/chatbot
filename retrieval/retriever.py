@@ -1,5 +1,9 @@
 import tensorflow as tf
 import numpy as np
+from Encoding.encoder import encode
+import os
+
+MODEL_NAME = "retriever.h5"
 
 
 class Retriever(tf.keras.models.Model):
@@ -10,12 +14,17 @@ class Retriever(tf.keras.models.Model):
     NUM_SAMPLES hyper-parameter.  Both are then put into a separate Feed-forward Network, outputing a vector of length
     model_size.  Loss used is contrastive loss on the cosine similarity of the vectors.
     """
-    def __init__(self, model_size=256, activation="swish"):
+    def __init__(self, model_size=512, activation="swish"):
         super(Retriever, self).__init__()
 
         # Define output layer
-        self.outputs_contexts = tf.keras.layers.Dense(model_size, activation=activation)
-        self.outputs_responses = tf.keras.layers.Dense(model_size, activation=activation)
+        self.outputs_contexts = tf.keras.layers.Dense(model_size, activation=activation, input_shape=(512,))
+        self.outputs_responses = tf.keras.layers.Dense(model_size, activation=activation, input_shape=(512,))
+
+        # If inference is set to True, load latest weights
+        if os.path.exists(MODEL_NAME):
+            self.initialise()
+            self.load_weights(MODEL_NAME)
 
 
     def call(self, contexts, responses, labels):
@@ -66,3 +75,21 @@ class Retriever(tf.keras.models.Model):
         cosim = tf.matmul(l2_responses, l2_contexts, transpose_b=True)
 
         return cosim
+
+    def encode_responses(self, texts):
+        responses = encode(texts)
+        res_in = tf.constant(responses)
+        res_out = self.outputs_responses(res_in)
+        res_out = tf.nn.l2_normalize(res_out, axis=-1)
+        res_out = res_out.numpy()
+
+        return res_out
+
+    def encode_contexts(self, texts):
+        contexts = encode(texts)
+        con_in = tf.constant(contexts)
+        con_out = self.outputs_contexts(con_in)
+        con_out = tf.nn.l2_normalize(con_out, axis=-1)
+        con_out = con_out.numpy()
+
+        return con_out
