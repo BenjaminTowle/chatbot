@@ -1,11 +1,7 @@
 import sqlite3
 import io
 import numpy as np
-import tensorflow_hub as hub
-
-# Load Encoder model
-embed = hub.load("https://tfhub.dev/google/universal-sentence-encoder/4")
-
+from encoding import encode
 
 """
 This section creates an array datatype for use in sqlite3
@@ -103,8 +99,8 @@ def get_lowest_id():
 
 def preprocess(contexts, responses):
     try:
-        array_contexts = embed(contexts)
-        array_responses = embed(responses)
+        array_contexts = encode(contexts)
+        array_responses = encode(responses)
         values = []
         for i in range(len(contexts)):
             values.append((contexts[i], responses[i], array_contexts[i], array_responses[i]))
