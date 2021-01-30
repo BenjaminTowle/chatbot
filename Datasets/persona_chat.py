@@ -1,14 +1,12 @@
 import re
-import pickle
 
 
 def load_dataset(return_metadata=False):
     """
     Load dataset from Persona Chat paper: https://arxiv.org/abs/1801.07243
-    Dataset can be downloaded here: http://parl.ai/downloads/personachat/personachat.tgz
     :return: list of contexts, list of responses, list of personae
     """
-    with open("datasets/train_both_revised.txt") as f:
+    with open("Datasets/pc/personachat/train_both_revised.txt") as f:
         persona_a = []
         personae_a = []
         persona_b = []
@@ -35,18 +33,6 @@ def load_dataset(return_metadata=False):
                     utt = re.sub(r"\A[0-9]+ ", "", utt)  # remove line numbering
                     dialogue.append(utt)
                     reading_persona = False
-
-    # Generate list of unique personae
-    personae = []
-    for A, B in zip(personae_a, personae_b):
-        for a in A:
-            if a not in personae:
-                personae.append(a)
-        for b in B:
-            if b not in personae:
-                personae.append(b)
-
-    pickle.dump(personae, open("all_personae", "wb"))
 
     contexts = []
     responses = []
