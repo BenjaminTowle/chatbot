@@ -1,7 +1,7 @@
 import sqlite3
 import io
 import numpy as np
-from encoding import encode
+from Encoding.encoder import encode
 
 """
 This section creates an array datatype for use in sqlite3
@@ -37,7 +37,7 @@ sqlite3.register_converter("array", convert_array)
 This section has the most common functions to interact with the database
 """
 
-# Database for storing sentences for later retrieval
+
 def create_database():
     with sqlite3.connect("chatbot.db", detect_types=sqlite3.PARSE_DECLTYPES) as connection:
         c = connection.cursor()
@@ -47,7 +47,7 @@ def create_database():
         connection.commit()
 
 
-# create_database()
+create_database()
 
 
 def insert(values):
