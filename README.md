@@ -9,15 +9,25 @@ The model currently is not multi-turn in its context window, although that could
 Dependencies:
 
 spacy == 2.3.5
+
 beautifulsoup4 == 4.9.3
+
 faiss-gpu == 1.6.5
+
 nltk == 3.5
+
 numpy == 1.18.5
+
 pandas == 1.1.5
+
 tensorflow == 2.3.1
+
 tensorflow-hub == 0.10.0
+
 transformers == 4.0.1
+
 sentencepiece == 0.1.94
+
 convokit == 2.4.3
 
 Expect many of these dependencies will also work on slightly earlier versions, though I haven't checked, so have provided the versions I used.
