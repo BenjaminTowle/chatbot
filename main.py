@@ -1,13 +1,16 @@
 import pickle
 import faiss
 import numpy as np
-from Retrieval.index import INDEX_PATH, create_index
+from Retrieval.index import CONTEXT_INDEX_PATH, RESPONSE_INDEX_PATH, create_index
 from Retrieval.retriever import Retriever, MODEL_NAME
 from Retrieval.train import train as retrieval_train
 from Reranking.reranker import Reranker
 from Reranking.train import RERANKER_NAME, train as reranking_train
 from Datasets.dataloader import load_dataset
 from Datasets.reddit import get_subreddits
+from Retrieval.Unpaired import unpaired_manager
+from Encoding.encoder import encode
+from itertools import chain
 import os
 import sys
 
@@ -15,7 +18,7 @@ import sys
 # HYPER-PARAMETERS
 ########################################
 N_PROBE = 5  # Number of clusters the indexer should visit
-K = 100  # Number of response candidates to be retrieved at each turn
+K = 10  # Number of response candidates to be retrieved at each turn
 
 
 # This is the main file to run to interact with the model, once the components have been trained
@@ -64,21 +67,23 @@ def main():
         print("Reranker model not found: set pipeline to 3 to train the reranking model")
         sys.exit()
 
-    if not os.path.exists(INDEX_PATH):
+    if not os.path.exists(CONTEXT_INDEX_PATH):
         print("Initialising response candidate index")
         create_index()
 
-    # Load indexer
-    index = faiss.read_index(INDEX_PATH, faiss.IO_FLAG_MMAP)
+    # Load indexers
+    context_index = faiss.read_index(CONTEXT_INDEX_PATH, faiss.IO_FLAG_MMAP)
+    response_index = faiss.read_index(RESPONSE_INDEX_PATH, faiss.IO_FLAG_MMAP)
 
-    # Load response candidates
-    if not os.path.exists("utterances.pickle"):
+    # Load context candidates
+    if not os.path.exists("responses.pickle"):
         _, responses = load_dataset()
     else:
-        responses = pickle.load(open("utterances.pickle", "rb"))
+        responses = pickle.load(open("responses.pickle", "rb"))
 
     # Sets the number of clusters to be visited by the index
-    index.nprobe = N_PROBE
+    context_index.nprobe = N_PROBE
+    response_index.nprobe = N_PROBE
     dialog_history = []
 
     # Load retrieval and reranking models
@@ -88,15 +93,18 @@ def main():
         msg = input("you: ")
 
         # Encode context
-        sent1 = retriever.encode_contexts([msg])
+        use_encoding, map_encoding = retriever.encode_contexts([msg])
 
         k = K
-        # Get initial candidates
-        distances, indices = index.search(sent1, k)
+        # Get context-context candidates
+        _, con_indices = context_index.search(use_encoding, k)
+
+        # Get context-response candidates
+        _, res_indices = response_index.search(map_encoding, k)
         candidates = []
-        for dist, ind in zip(distances[0], indices[0]):
+        for ind in chain(con_indices[0], res_indices[0]):
             # Filters out responses that have already been used in previous turns
-            if responses[ind] not in dialog_history:
+            if responses[ind] not in dialog_history and responses[ind] not in candidates:
                 candidates.append(responses[ind])
 
         # Get BERT re-ranking score (given as probability of context and response being a true pair)
